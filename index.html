@@ -352,6 +352,14 @@
             box-sizing: border-box;
             flex-shrink: 0;
             z-index: 1;
+        }
+
+        .tl-pre, .tl-post {
+            position: relative;
+            top: 0;
+            width: 100%;
+            box-sizing: border-box;
+            z-index: 1;
 
             & .tl-line {
                 position: relative;
@@ -385,6 +393,11 @@
             }
         }
 
+        .tl-pre {
+            & .tl-line {
+                opacity: 0.5;
+            }
+        }
 
         .events-container {
             position: relative;
@@ -477,6 +490,7 @@
             width: 100%;
             min-height: 2px;
             box-sizing: border-box;
+            opacity: 0.7;
             z-index: 1;
         }
 

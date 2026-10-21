@@ -73,12 +73,13 @@ class World {
 
         let text = "";
         for (let timeline of this.timelines) {
-            const tlTime = this.currentTime - timeline.start;
+            let tlTime = this.currentTime;
+            if (timeline.index > 0) { tlTime -= timeline.start; }
             text += `${tlTime} ${timeline.abbr} | `;
             this.currentLineEl.append($(`<div>${tlTime} ${timeline.abbr}</div>`))
         }
         this.currentTimeEl.text(text.slice(0, text.length - 3));
-        this.currentLineEl.css("top", `${this.currentTime * timeSize}px`);
+        this.currentLineEl.css("top", `${(this.currentTime + -this.timelines[0].start) * timeSize}px`);
 
     }
 
@@ -91,21 +92,30 @@ class World {
 
     toggleMarkLine(timelineIndex, ...times) {
         for (let time of times) {
-            time = time + this.timelines[timelineIndex].start;
+            time = timelineIndex == 0 ? time : time + this.timelines[timelineIndex].start;
 
             if ($("#mark-line-" + time).length > 0) {
                 $("#mark-line-" + time).remove();
             } else {
                 const eventLine = $(`<div id="mark-line-${time}" class="mark-line"></div>`);
-                eventLine.css("top", `${time * timeSize}px`);
+                
+                eventLine.css("top", `${(time + -this.timelines[0].start) * timeSize}px`);
                 for (let timeline of this.timelines) {
-                    const tlTime = time - timeline.start;
+                    let tlTime = time;
+                    if (timeline.index > 0) { tlTime -= timeline.start; }
                     eventLine.append($(`<div>${tlTime} ${timeline.abbr}</div>`))
                 }
                 this.mkContainerEl.append(eventLine);
             }
         }
     }
+
+    // redrawMarkLines() {
+    //     $(".mark-line").each(line => {
+    //         const time = parseInt(line.attr("id").substring(10));
+    //         line.css("top", `${(time + -this.timelines[0].start) * timeSize}px`);
+    //     })
+    // }
 
     removeMarkLines(timelineIndex, times) {
         for (let time of times) {
@@ -256,7 +266,7 @@ class World {
             $("#world-name-container").text(this.name);
             this.saveToLocalStorage();
 
-            closePopup("popup-world")
+            closePopup("popup-world");
         }
     }
 
@@ -278,23 +288,32 @@ class World {
             editEl.on("click", () => timeline.editTimelineInit());
             this.tlNameContainerEl.append($("<div class='timeline-name-container'></div").append(nameEl, editEl));
         });
+        
+        this.drawCurrentTime();
     }
 
     drawEvents(tlIndex) {
-        console.log("draw");
-        $(`.benchmark-${this.timelines[tlIndex].abbr}`).remove();
+        const abbr = this.timelines[tlIndex].abbr;
+        $(`.benchmark-${abbr}`).remove();
 
-        const eventDetailEls = this.timelines[tlIndex].getEventsEl();
-        console.log(eventDetailEls);
-        const elId = eventDetailEls.eventContainerEl.attr("id");
+        const eventsContainerEl = this.timelines[tlIndex].getEventsEl();
+        const elId = eventsContainerEl.attr("id");
         
         if ($(`#${elId}`, this.evContainerEl).length > 0) {
-            $(`#${elId}`).replaceWith(eventDetailEls.eventContainerEl);
+            $(`#${elId}`).replaceWith(eventsContainerEl);
         } else {
-            this.evContainerEl.append(eventDetailEls.eventContainerEl);
+            this.evContainerEl.append(eventsContainerEl);
         }
 
-        this.mkContainerEl.append(eventDetailEls.benchmarkEls);
+        $(`#${elId}`).children("[benchmark='true']").each((idx, childEl) => {
+            const jchildEl = $(childEl);
+            const benchmarkContainerEl = $(`<div class='benchmark benchmark-${abbr}'></div>`);
+            benchmarkContainerEl.css("top", jchildEl.css("top"));
+            benchmarkContainerEl.css("background-color", jchildEl.css("background-color"));
+            benchmarkContainerEl.css("height", jchildEl.css("height"));
+            this.mkContainerEl.append(benchmarkContainerEl);
+        })
+
     }
 
 
@@ -388,9 +407,15 @@ class World {
             valid = false;
             $(".error-messages", timelineForm).append("<p>Timeline abbreviation is required.</p>");
         }
-        if (!formData.get("timeline-start") && (parseInt(formData.get("timeline-idx")) > 0)) {
+        if (!formData.get("timeline-start")) {
             valid = false;
             $(".error-messages", timelineForm).append("<p>Timeline start is required.</p>");
+        }
+        if (parseInt(formData.get("timeline-start")) < this.timelines[0].start) {
+            if (parseInt(formData.get("timeline-idx")) > 0) {
+                valid = false;
+                $(".error-messages", timelineForm).append("<p>Timeline start time must be within the range of the first timeline.</p>");
+            }
         }
         if (formData.get("timeline-end")) {
             if (parseInt(formData.get("timeline-end")) < parseInt(formData.get("timeline-start"))) {
@@ -572,18 +597,57 @@ class Timeline {
     }
 
     getTimelineEl() {
+        const mainStart = this.world.timelines[0].start;
+
         const timelineContainerEl = $(`<div id='${this.tlId}' class='timeline-container'></div>`);
-        timelineContainerEl.css("height", `${(this.end - this.start) * timeSize}px`)
-        timelineContainerEl.css("top", `${this.start * timeSize}px`);
+        const tlPostContainerEl = $(`<div class='tl-post'></div>`);
+        tlPostContainerEl.css("height", `${(this.end - this.start) * timeSize}px`)
         
         const tlLineEl = $("<div class='tl-line'></div>");
-        timelineContainerEl.append(tlLineEl);
+        tlPostContainerEl.append(tlLineEl);
 
         for (let i = 0; i <= this.end - this.start; i += timeInterval) {
             const tlTickEl = $(`<div class='tl-tick'><div class='tl-label'>${i} ${this.abbr}</div><div class='tl-dash'></div></div>`);
             tlTickEl.css("top", `${(i) * timeSize}px`);
             tlLineEl.append(tlTickEl);
         }
+
+        if (this.index == 0) {
+            if (this.start < 0) {
+                const tlPreContainerEl = $(`<div class='tl-pre'></div>`);
+                tlPreContainerEl.css("height", `${this.start * -timeSize}px`)
+                
+                const tlPreLineEl = $("<div class='tl-line'></div>");
+                tlPreContainerEl.append(tlPreLineEl);
+
+                for (let i = timeInterval; i <= -this.start ; i += timeInterval) {
+                    const tlTickEl = $(`<div class='tl-tick'><div class='tl-label'>${-i} ${this.abbr}</div><div class='tl-dash'></div></div>`);
+                    tlTickEl.css("bottom", `${((i) * timeSize) - 2}px`);
+                    tlPreLineEl.append(tlTickEl);
+                }
+
+                timelineContainerEl.append(tlPreContainerEl);
+            }
+        } else {
+            if (this.start > mainStart) {
+                const preLength = this.start - mainStart;
+                const tlPreContainerEl = $(`<div class='tl-pre'></div>`);
+                tlPreContainerEl.css("height", `${preLength * timeSize}px`)
+                
+                const tlPreLineEl = $("<div class='tl-line'></div>");
+                tlPreContainerEl.append(tlPreLineEl);
+
+                for (let i = timeInterval; i <= preLength; i += timeInterval) {
+                    const tlTickEl = $(`<div class='tl-tick'><div class='tl-label'>${-i} ${this.abbr}</div><div class='tl-dash'></div></div>`);
+                    tlTickEl.css("bottom", `${((i) * timeSize) - 2}px`);
+                    tlPreLineEl.append(tlTickEl);
+                }
+
+                timelineContainerEl.append(tlPreContainerEl);
+            }
+        }
+
+        timelineContainerEl.append(tlPostContainerEl);
 
         return timelineContainerEl;
     }
@@ -610,7 +674,7 @@ class Timeline {
     }
 
     editTimelineInit() {
-        const timelineForm = $(`
+        const timelineForm = this.index > 0 ? $(`
             <form id="timeline-form">
                 <input type="hidden" id="timeline-idx" name="timeline-idx" value="${this.index}">
 
@@ -629,11 +693,47 @@ class Timeline {
                 <div>
                     <label for="timeline-start">Start Year (Relative to ${this.world.timelines[0].name}):</label>
                     <br/>
-                    <input type="number" id="timeline-start" name="timeline-start" min="0" value="${this.start}" ${(this.index == 0) && "disabled"}>
+                    <input type="number" id="timeline-start" name="timeline-start" value="${this.start}">
                 </div>
 
                 <div>
                     <label for="timeline-end">End Year (Relative to ${this.world.timelines[0].name}):</label>
+                    <br/>
+                    <input type="number" id="timeline-end" name="timeline-end" value="${this.end}">
+                </div>
+
+                <div class="color-form">
+                    <label for="timeline-color">Event Colors: </label> <input type="color" id="timeline-color" name="timeline-color" value="${this.color}">
+                </div>
+
+                <div class="error-messages span"></div>
+            </form>
+        `)
+        :
+        $(`
+            <form id="timeline-form">
+                <input type="hidden" id="timeline-idx" name="timeline-idx" value="${this.index}">
+
+                <div>
+                    <label for="timeline-name">Timeline Name:</label>
+                    <br/>
+                    <input type="text" id="timeline-name" name="timeline-name" value="${this.name}">
+                </div>
+
+                <div>
+                    <label for="timeline-abbr">Timeline Abbreviation:</label>
+                    <br/>
+                    <input type="text" id="timeline-abbr" name="timeline-abbr" value="${this.abbr}">
+                </div>
+
+                <div>
+                    <label for="timeline-start">Start Year:</label>
+                    <br/>
+                    <input type="number" id="timeline-start" name="timeline-start" value="${this.start}">
+                </div>
+
+                <div>
+                    <label for="timeline-end">End Year:</label>
                     <br/>
                     <input type="number" id="timeline-end" name="timeline-end" min="0" value="${this.end}">
                 </div>
@@ -678,21 +778,16 @@ class Timeline {
     // EVENT MANAGEMENT
     getEventsEl() {
         const eventsContainerEl = $(`<div id='${this.evId}' class='events-container'></div>`);
-        eventsContainerEl.css("top", `${this.start * timeSize}px`);
         eventsContainerEl.css("order", this.index + 1);
-        let allBenchmarkEls = [];
 
         this.events.forEach(event => {
             const els = event.getEventEls(this.abbr);
-            console.log(els);
-            els.eventEls.forEach(el => {
+            els.forEach(el => {
                 eventsContainerEl.append(el);
             })
-            allBenchmarkEls = allBenchmarkEls.concat(els.benchmarkEls);
-
         });
 
-        return {eventContainerEl: eventsContainerEl, benchmarkEls: allBenchmarkEls};
+        return eventsContainerEl;
     }
 
     sortEvents() {
@@ -772,8 +867,13 @@ class Event {
     }
 
     getEventEls(abbr) {
+        const timeOffset = this.timeline.index == 0 ? -this.timeline.start : -this.world.timelines[0].start + this.timeline.start;
+
         const formattedTime = this.end == null ? `${this.start} ${abbr}` : `${this.start} — ${this.end} ${abbr}`;
         const eventContainerEl = $(`<div class='event-container'></div>`);
+        if (this.benchmark) {
+            eventContainerEl.attr("benchmark", true);
+        }
 
         const eventStartEl = $(`<div class="event">
             </div>`);
@@ -783,7 +883,8 @@ class Event {
         </div>`)
         eventStartEl.append(eventLabelEl);
         eventContainerEl.append(eventStartEl);
-        eventContainerEl.css("top", `${(this.start) * timeSize}px`);
+        eventContainerEl.css("top", `${(this.start + timeOffset) * timeSize}px`);
+        
 
         eventLabelEl.css("background-color", this.color);
         eventContainerEl.css("background-color", this.color + "80");
@@ -838,7 +939,7 @@ class Event {
                     $(".ev-name", recurringEventContainerEl).text(`${i+1}${tail} ${this.name}`);
                 }
 
-                recurringEventContainerEl.css("top", `${(newStartTime) * timeSize}px`);
+                recurringEventContainerEl.css("top", `${(newStartTime + timeOffset) * timeSize}px`);
                 
                 if (this.end == null) {
                     recurringEventContainerEl.on("click", () => this.world.toggleMarkLine(this.timeline.index, newStartTime))
@@ -860,41 +961,40 @@ class Event {
             }
         }
 
-        const allBenchmarkEls = this.getBenchmarkEls(abbr);
-        return {eventEls: allEventEls, benchmarkEls: allBenchmarkEls};
+        return allEventEls;
     }
 
-    getBenchmarkEls(abbr) {
-        if (this.benchmark) {
-            const benchmarkContainerEl = $(`<div class='benchmark benchmark-${abbr}'></div>`);
-            benchmarkContainerEl.css("top", `${(this.start + this.timeline.start) * timeSize}px`);
+    // getBenchmarkEls(abbr) {
+    //     if (this.benchmark) {
+    //         const benchmarkContainerEl = $(`<div class='benchmark benchmark-${abbr}'></div>`);
+    //         benchmarkContainerEl.css("top", `${(this.start + this.timeline.start) * timeSize}px`);
 
-            benchmarkContainerEl.css("background-color", this.color + "80");
+    //         benchmarkContainerEl.css("background-color", this.color + "80");
             
-            if (this.end !== null) {
-                benchmarkContainerEl.css("height", (this.end-this.start) * timeSize + 2);
-            } else {
-                benchmarkContainerEl.css("height", 2); // the two is because the ticks are two pxs high
-            }
+    //         if (this.end !== null) {
+    //             benchmarkContainerEl.css("height", (this.end-this.start) * timeSize + 2);
+    //         } else {
+    //             benchmarkContainerEl.css("height", 2); // the two is because the ticks are two pxs high
+    //         }
 
-            const allBenchmarkEls = [benchmarkContainerEl];
+    //         const allBenchmarkEls = [benchmarkContainerEl];
 
-            if (this.recurring) {
-                let i = 1;
-                while ((this.start + i * this.recurringInterval) < this.recurringEndTime) {
-                    const recurringBenchmarkContainerEl = benchmarkContainerEl.clone()
-                    const newStartTime = this.start + this.timeline.start + i * this.recurringInterval;
-                    recurringBenchmarkContainerEl.css("top", `${(newStartTime) * timeSize}px`);
+    //         if (this.recurring) {
+    //             let i = 1;
+    //             while ((this.start + i * this.recurringInterval) < this.recurringEndTime) {
+    //                 const recurringBenchmarkContainerEl = benchmarkContainerEl.clone()
+    //                 const newStartTime = this.start + this.timeline.start + i * this.recurringInterval;
+    //                 recurringBenchmarkContainerEl.css("top", `${(newStartTime) * timeSize}px`);
                         
-                    allBenchmarkEls.push(recurringBenchmarkContainerEl);
-                    i += 1;
-                }
-            }
+    //                 allBenchmarkEls.push(recurringBenchmarkContainerEl);
+    //                 i += 1;
+    //             }
+    //         }
 
-            return allBenchmarkEls;
-        }
-        return [];
-    }
+    //         return allBenchmarkEls;
+    //     }
+    //     return [];
+    // }
 
     editEvent(eventData) {
         this.name = eventData.name;
@@ -1041,8 +1141,6 @@ function closePopup(popupId) {
 
 
 
-
-
 $(document).ready(function(){
     $("#popup-container").hide();
 
@@ -1054,6 +1152,6 @@ $(document).ready(function(){
     }
 
     const world = new World(timelineData);
-    
+    world.scrollToCurrentTime();
 
 });
