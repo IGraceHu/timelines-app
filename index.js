@@ -2,6 +2,7 @@
 INITDATA = {
     name: "My World",
     currentTime: 0,
+    defaultTimeInterval: 100,
     timelines: [
         {
             index: 0,
@@ -15,7 +16,6 @@ INITDATA = {
     ]
 }
 
-const endTime = 100;
 let timeInterval = 10;
 let timeSize = 10;
 
@@ -37,9 +37,11 @@ class World {
         $("#upload-data-input").on("change", (e) => this.upload(e));
         $("#clear-data-button").on("click", () => this.clearInit());
         $("#time-interval").on("change", (e) => {
+            let onTime = window.pageYOffset / timeSize;
             this.setTimeInterval(e.target.value);
             this.drawTimelines();
             this.drawCurrentTime();
+            window.scrollTo(0, onTime * timeSize);
         });
 
         this.loadData(data);
@@ -49,13 +51,15 @@ class World {
         console.log(data)
         this.name = data.name;
         this.currentTime = data.currentTime;
+        this.defaultTimeInterval = data.defaultTimeInterval;
 
         this.saved = true;
 
         this.timelines = data.timelines.map(timelineData => new Timeline(timelineData, this));
         $("#world-name-container").text(this.name);
 
-        this.setTimeInterval(document.getElementById("time-interval").value);
+        this.setTimeInterval(this.defaultTimeInterval);
+        $("#time-interval").val(this.defaultTimeInterval);
 
         this.drawTimelines();
         this.drawCurrentTime();
@@ -65,6 +69,7 @@ class World {
     setTimeInterval(interval) {
         timeInterval = parseInt(interval);
         timeSize = 100 / timeInterval;
+        $('#time-interval-num').text(timeInterval);
     }
 
     drawCurrentTime() {
@@ -135,6 +140,7 @@ class World {
         return JSON.stringify({
             name: this.name,
             currentTime: this.currentTime,
+            defaultTimeInterval: this.defaultTimeInterval,
             timelines: this.timelines.map(timeline => ({
                 index: timeline.index,
                 name: timeline.name,
@@ -219,24 +225,45 @@ class World {
                     <br />
                     <input type="text" id="world-name" name="world-name" value="${this.name}">
                 </div>
-
-                <div class="span">
-                    <label for="current-time">Current Time:</label>
-                    <br />
-                    <input type="number" id="current-time" name="current-time" min="0" value="${this.currentTime}" style="width: auto;">
-                    <select id="current-time-tl" name="current-time-tl"></select>
-                </div>
-
-                <div class="error-messages span"></div>
             </form>
         `);
 
-        // const selectTl = $("#current-time-tl", worldForm);
-        // console.log(selectTl);
+        const cTimeContainerEl = $('<div class="span"></div>');
+        const cTimeNumEl = $(`<input type="number" id="current-time" name="current-time" min="0" value="${this.currentTime}" style="width: auto;">`);
+        const cTimeTlEl = $(`<select id="current-time-tl" name="current-time-tl"></select>`);
         for (let timeline of this.timelines) {
-            worldForm.find("#current-time-tl").append($(`<option value="${timeline.index}">${timeline.abbr}</option>`))
-            // console.log(selectTl);
+            cTimeTlEl.append($(`<option value="${timeline.index}">${timeline.abbr}</option>`))
         }
+
+        const cTimeGlobalNumEl = $(`<input type="number" id="current-global-time" value="${this.currentTime}" hidden>`);
+
+        cTimeNumEl.on("change", (e) => {
+            const newTime = cTimeTlEl.val() == 0 ? e.target.value : parseInt(e.target.value) + this.timelines[cTimeTlEl.val()].start;
+            cTimeGlobalNumEl.val(newTime);
+        })
+
+        cTimeTlEl.on("change", (e) =>  {
+            const idx = e.target.value;
+            const newTime = idx == 0 ? cTimeGlobalNumEl.val() : parseInt(cTimeGlobalNumEl.val()) - this.timelines[idx].start;
+            cTimeNumEl.val(newTime);
+        })
+
+        cTimeContainerEl.append('<label for="current-time">Current Time:</label>', '<br />', cTimeNumEl, cTimeTlEl, cTimeGlobalNumEl);
+
+
+
+        const dTIEl = $(`<div class="span"></div>`);
+        const intervalLabelEl = $(`<label for="default-time-interval">Default Time Interval: ${this.defaultTimeInterval} years</label>`);
+        const intervalRangeEl = $(`<input type="range" id="default-time-interval" name="default-time-interval" min="50" max="500" step="50" value="${this.defaultTimeInterval}" style="width: 50%;">`);
+
+        intervalRangeEl.on("change", (e) => {
+            intervalLabelEl.text(`Default Time Interval: ${e.target.value} years`)
+        })
+        
+        dTIEl.append(intervalLabelEl, "<br />", intervalRangeEl);
+
+        worldForm.append(cTimeContainerEl, dTIEl, `<div class="error-messages span"></div>`);
+
 
         const popupEl = drawPopup("world", worldForm, () => this.editWorldRecieve(worldForm));
         showPopup(popupEl);
@@ -257,10 +284,15 @@ class World {
             valid = false;
             $(".error-messages", timelineForm).append("<p>Current Time is required.</p>");
         }
+        if (!formData.get("default-time-interval")) {
+            valid = false;
+            $(".error-messages", timelineForm).append("<p>Default Time Interval is required.</p>");
+        }
 
         if (valid) {
             this.name = formData.get("world-name");
             this.currentTime = parseInt(formData.get("current-time")) + this.timelines[parseInt(formData.get("current-time-tl"))].start;
+            this.defaultTimeInterval = parseInt(formData.get("default-time-interval"))
             this.drawTimelines();
             this.drawCurrentTime();
             $("#world-name-container").text(this.name);
@@ -729,7 +761,7 @@ class Timeline {
                 <div>
                     <label for="timeline-start">Start Year:</label>
                     <br/>
-                    <input type="number" id="timeline-start" name="timeline-start" value="${this.start}">
+                    <input type="number" id="timeline-start" name="timeline-start" value="${this.start}" max="0">
                 </div>
 
                 <div>
